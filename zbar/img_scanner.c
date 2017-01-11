@@ -684,7 +684,6 @@ int zbar_scan_image (zbar_image_scanner_t *iscn,
     cy1 = img->crop_y + img->crop_h;
     assert(cy1 <= h);
     data = img->data;
-
     zbar_image_write_png(img, "debug.png");
     svg_open("debug.svg", 0, 0, w, h);
     svg_image("debug.png", w, h);
@@ -799,6 +798,7 @@ int zbar_scan_image (zbar_image_scanner_t *iscn,
         }
         svg_group_end();
     }
+
     iscn->dy = 0;
     iscn->img = NULL;
 
@@ -806,88 +806,7 @@ int zbar_scan_image (zbar_image_scanner_t *iscn,
     _zbar_qr_decode(iscn->qr, iscn, img);
 #endif
 
-    /* FIXME tmp hack to filter bad EAN results */
-    /* FIXME tmp hack to merge simple case EAN add-ons */
-    char filter = (!iscn->enable_cache &&
-                   (density == 1 || CFG(iscn, ZBAR_CFG_Y_DENSITY) == 1));
-    int nean = 0, naddon = 0;
-    if(syms->nsyms) {
-        zbar_symbol_t **symp;
-        for(symp = &syms->head; *symp; ) {
-            zbar_symbol_t *sym = *symp;
-            if(sym->cache_count <= 0 &&
-               ((sym->type < ZBAR_COMPOSITE && sym->type > ZBAR_PARTIAL) ||
-                sym->type == ZBAR_DATABAR ||
-                sym->type == ZBAR_DATABAR_EXP ||
-                sym->type == ZBAR_CODABAR))
-            {
-	        if((sym->type == ZBAR_CODABAR || filter) && sym->quality < 4) {
-                    if(iscn->enable_cache) {
-                        /* revert cache update */
-                        zbar_symbol_t *entry = cache_lookup(iscn, sym);
-                        if(entry)
-                            entry->cache_count--;
-                        else
-                            assert(0);
-                    }
-
-                    /* recycle */
-                    *symp = sym->next;
-                    syms->nsyms--;
-                    sym->next = NULL;
-                    _zbar_image_scanner_recycle_syms(iscn, sym);
-                    continue;
-                }
-                else if(sym->type < ZBAR_COMPOSITE &&
-                        sym->type != ZBAR_ISBN10)
-                {
-                    if(sym->type > ZBAR_EAN5)
-                        nean++;
-                    else
-                        naddon++;
-                }
-            }
-            symp = &sym->next;
-        }
-
-        if(nean == 1 && naddon == 1 && iscn->ean_config) {
-            /* create container symbol for composite result */
-            zbar_symbol_t *ean = NULL, *addon = NULL;
-            for(symp = &syms->head; *symp; ) {
-                zbar_symbol_t *sym = *symp;
-                if(sym->type < ZBAR_COMPOSITE && sym->type > ZBAR_PARTIAL) {
-                    /* move to composite */
-                    *symp = sym->next;
-                    syms->nsyms--;
-                    sym->next = NULL;
-                    if(sym->type <= ZBAR_EAN5)
-                        addon = sym;
-                    else
-                        ean = sym;
-                }
-                else
-                    symp = &sym->next;
-            }
-            assert(ean);
-            assert(addon);
-
-            int datalen = ean->datalen + addon->datalen + 1;
-            zbar_symbol_t *ean_sym =
-                _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen);
-            ean_sym->orient = ean->orient;
-            ean_sym->syms = _zbar_symbol_set_create();
-            memcpy(ean_sym->data, ean->data, ean->datalen);
-            memcpy(ean_sym->data + ean->datalen,
-                   addon->data, addon->datalen + 1);
-            ean_sym->syms->head = ean;
-            ean->next = addon;
-            ean_sym->syms->nsyms = 2;
-            _zbar_image_scanner_add_sym(iscn, ean_sym);
-        }
-    }
-
-    if(syms->nsyms && iscn->handler)
-        iscn->handler(img, iscn->userdata);
+    /* PART EXCLUDED #1 */
 
     svg_close();
     return(syms->nsyms);
